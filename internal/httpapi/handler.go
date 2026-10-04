@@ -35,7 +35,8 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /api/links", h.createLink)
 	mux.HandleFunc("GET /api/links/{code}", h.getStats)
 	mux.HandleFunc("GET /{code}", h.redirect)
-	return mux
+
+	return logRequests(h.log, recoverPanic(h.log, mux))
 }
 
 type createLinkRequest struct {
