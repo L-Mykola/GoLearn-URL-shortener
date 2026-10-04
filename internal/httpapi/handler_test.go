@@ -36,7 +36,7 @@ const baseURL = "http://short.test"
 
 func serve(svc LinkService, req *http.Request) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
-	New(svc, baseURL, slog.New(slog.DiscardHandler)).Routes().ServeHTTP(rec, req)
+	New(svc, slog.New(slog.DiscardHandler), Options{BaseURL: baseURL}).Routes().ServeHTTP(rec, req)
 	return rec
 }
 

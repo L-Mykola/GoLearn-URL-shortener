@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -16,6 +17,8 @@ type Config struct {
 	Storage         string
 	DBPath          string
 	CleanupInterval time.Duration
+	RateLimit       float64
+	RateBurst       int
 }
 
 func Load() (Config, error) {
@@ -26,6 +29,8 @@ func Load() (Config, error) {
 		DBPath:          getEnv("DB_PATH", "shortener.db"),
 		ShutdownTimeout: 10 * time.Second,
 		CleanupInterval: time.Minute,
+		RateLimit:       1,
+		RateBurst:       5,
 	}
 
 	switch cfg.Storage {
@@ -43,6 +48,21 @@ func Load() (Config, error) {
 	}
 	if err := durationEnv("CLEANUP_INTERVAL", &cfg.CleanupInterval); err != nil {
 		return Config{}, err
+	}
+
+	if v := os.Getenv("RATE_LIMIT_RPS"); v != "" {
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || f < 0 {
+			return Config{}, fmt.Errorf("RATE_LIMIT_RPS: want non-negative number, got %q", v)
+		}
+		cfg.RateLimit = f
+	}
+	if v := os.Getenv("RATE_LIMIT_BURST"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return Config{}, fmt.Errorf("RATE_LIMIT_BURST: want positive integer, got %q", v)
+		}
+		cfg.RateBurst = n
 	}
 
 	return cfg, nil

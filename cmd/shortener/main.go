@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"golearn/internal/config"
 	"golearn/internal/httpapi"
 	"golearn/internal/link"
@@ -56,7 +58,11 @@ func run() error {
 	wg.Go(func() { cleaner.Run(bgCtx) })
 
 	svc := link.NewService(store)
-	handler := httpapi.New(svc, cfg.BaseURL, logger)
+	handler := httpapi.New(svc, logger, httpapi.Options{
+		BaseURL:   cfg.BaseURL,
+		RateLimit: rate.Limit(cfg.RateLimit),
+		RateBurst: cfg.RateBurst,
+	})
 
 	srv := &http.Server{
 		Handler:           handler.Routes(),

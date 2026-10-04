@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"golearn/internal/link"
 )
 
@@ -19,20 +21,31 @@ type LinkService interface {
 	Stats(ctx context.Context, code string) (link.Link, error)
 }
 
+type Options struct {
+	BaseURL   string
+	RateLimit rate.Limit
+	RateBurst int
+}
+
 type Handler struct {
 	svc     LinkService
 	baseURL string
 	log     *slog.Logger
+	limiter *ipLimiter
 }
 
-func New(svc LinkService, baseURL string, log *slog.Logger) *Handler {
-	return &Handler{svc: svc, baseURL: baseURL, log: log}
+func New(svc LinkService, log *slog.Logger, opts Options) *Handler {
+	h := &Handler{svc: svc, baseURL: opts.BaseURL, log: log}
+	if opts.RateLimit > 0 {
+		h.limiter = newIPLimiter(opts.RateLimit, max(opts.RateBurst, 1))
+	}
+	return h
 }
 
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
-	mux.HandleFunc("POST /api/links", h.createLink)
+	mux.Handle("POST /api/links", h.rateLimit(http.HandlerFunc(h.createLink)))
 	mux.HandleFunc("GET /api/links/{code}", h.getStats)
 	mux.HandleFunc("GET /{code}", h.redirect)
 
