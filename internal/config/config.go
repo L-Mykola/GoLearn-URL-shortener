@@ -13,6 +13,8 @@ type Config struct {
 	BaseURL         string
 	LogLevel        slog.Level
 	ShutdownTimeout time.Duration
+	Storage         string
+	DBPath          string
 }
 
 func Load() (Config, error) {
@@ -20,6 +22,14 @@ func Load() (Config, error) {
 		Addr:            getEnv("ADDR", ":8090"),
 		BaseURL:         strings.TrimRight(getEnv("BASE_URL", "http://localhost:8090"), "/"),
 		ShutdownTimeout: 10 * time.Second,
+		Storage:         getEnv("STORAGE", "sqlite"),
+		DBPath:          getEnv("DB_PATH", "shortener.db"),
+	}
+
+	switch cfg.Storage {
+	case "sqlite", "memory":
+	default:
+		return Config{}, fmt.Errorf("STORAGE: unknown value %q, want sqlite or memory", cfg.Storage)
 	}
 
 	if err := cfg.LogLevel.UnmarshalText([]byte(getEnv("LOG_LEVEL", "info"))); err != nil {

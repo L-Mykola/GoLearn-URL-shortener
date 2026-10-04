@@ -17,6 +17,8 @@ func TestLoadDefaults(t *testing.T) {
 		BaseURL:         "http://localhost:8090",
 		LogLevel:        slog.LevelInfo,
 		ShutdownTimeout: 10 * time.Second,
+		Storage:         "sqlite",
+		DBPath:          "shortener.db",
 	}
 	if cfg != want {
 		t.Errorf("got %+v, want %+v", cfg, want)
@@ -28,6 +30,8 @@ func TestLoadFromEnv(t *testing.T) {
 	t.Setenv("BASE_URL", "https://sho.rt/")
 	t.Setenv("LOG_LEVEL", "debug")
 	t.Setenv("SHUTDOWN_TIMEOUT", "3s")
+	t.Setenv("STORAGE", "memory")
+	t.Setenv("DB_PATH", "/tmp/x.db")
 
 	cfg, err := Load()
 	if err != nil {
@@ -39,6 +43,8 @@ func TestLoadFromEnv(t *testing.T) {
 		BaseURL:         "https://sho.rt",
 		LogLevel:        slog.LevelDebug,
 		ShutdownTimeout: 3 * time.Second,
+		Storage:         "memory",
+		DBPath:          "/tmp/x.db",
 	}
 	if cfg != want {
 		t.Errorf("got %+v, want %+v", cfg, want)
@@ -51,6 +57,7 @@ func TestLoadInvalid(t *testing.T) {
 	}{
 		{"LOG_LEVEL", "loud"},
 		{"SHUTDOWN_TIMEOUT", "ten"},
+		{"STORAGE", "redis"},
 	}
 
 	for _, tt := range tests {

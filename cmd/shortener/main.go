@@ -16,6 +16,7 @@ import (
 	"golearn/internal/httpapi"
 	"golearn/internal/link"
 	"golearn/internal/memstore"
+	"golearn/internal/sqlitestore"
 )
 
 func main() {
@@ -36,7 +37,13 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	store := memstore.New()
+	store, closeStore, err := openStore(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer closeStore()
+	logger.Info("storage ready", "type", cfg.Storage, "path", cfg.DBPath)
+
 	svc := link.NewService(store)
 	handler := httpapi.New(svc, cfg.BaseURL, logger)
 
@@ -78,4 +85,17 @@ func run() error {
 
 	logger.Info("server stopped")
 	return nil
+}
+
+func openStore(ctx context.Context, cfg config.Config) (link.Store, func() error, error) {
+	switch cfg.Storage {
+	case "memory":
+		return memstore.New(), func() error { return nil }, nil
+	default:
+		s, err := sqlitestore.Open(ctx, cfg.DBPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("open sqlite: %w", err)
+		}
+		return s, s.Close, nil
+	}
 }
