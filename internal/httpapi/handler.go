@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -22,10 +22,11 @@ type LinkService interface {
 type Handler struct {
 	svc     LinkService
 	baseURL string
+	log     *slog.Logger
 }
 
-func New(svc LinkService, baseURL string) *Handler {
-	return &Handler{svc: svc, baseURL: baseURL}
+func New(svc LinkService, baseURL string, log *slog.Logger) *Handler {
+	return &Handler{svc: svc, baseURL: baseURL, log: log}
 }
 
 func (h *Handler) Routes() http.Handler {
@@ -66,7 +67,7 @@ func (h *Handler) createLink(w http.ResponseWriter, r *http.Request) {
 
 	var req createLinkRequest
 	if err := dec.Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		h.writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 
@@ -76,7 +77,7 @@ func (h *Handler) createLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, h.toResponse(l, false))
+	h.writeJSON(w, http.StatusCreated, h.toResponse(l, false))
 }
 
 func (h *Handler) getStats(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +86,7 @@ func (h *Handler) getStats(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, h.toResponse(l, true))
+	h.writeJSON(w, http.StatusOK, h.toResponse(l, true))
 }
 
 func (h *Handler) redirect(w http.ResponseWriter, r *http.Request) {
@@ -113,23 +114,23 @@ func (h *Handler) toResponse(l link.Link, withVisits bool) linkResponse {
 func (h *Handler) handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, link.ErrInvalidURL):
-		writeError(w, http.StatusBadRequest, err.Error())
+		h.writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, link.ErrNotFound):
-		writeError(w, http.StatusNotFound, "link not found")
+		h.writeError(w, http.StatusNotFound, "link not found")
 	default:
-		log.Printf("internal error: %v", err)
-		writeError(w, http.StatusInternalServerError, "internal server error")
+		h.log.Error("internal error", "err", err)
+		h.writeError(w, http.StatusInternalServerError, "internal server error")
 	}
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
+func (h *Handler) writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		log.Printf("write json: %v", err)
+		h.log.Error("write json", "err", err)
 	}
 }
 
-func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, errorResponse{Error: msg})
+func (h *Handler) writeError(w http.ResponseWriter, status int, msg string) {
+	h.writeJSON(w, status, errorResponse{Error: msg})
 }

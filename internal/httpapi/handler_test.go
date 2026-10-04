@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -35,7 +36,7 @@ const baseURL = "http://short.test"
 
 func serve(svc LinkService, req *http.Request) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
-	New(svc, baseURL).Routes().ServeHTTP(rec, req)
+	New(svc, baseURL, slog.New(slog.DiscardHandler)).Routes().ServeHTTP(rec, req)
 	return rec
 }
 
