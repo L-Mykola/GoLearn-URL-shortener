@@ -1,0 +1,10 @@
+/bin/
+*.exe
+*.test
+*.out
+
+.env
+
+.idea/
+.DS_Store
+.vscode
