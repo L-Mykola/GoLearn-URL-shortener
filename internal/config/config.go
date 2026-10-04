@@ -23,8 +23,8 @@ type Config struct {
 
 func Load() (Config, error) {
 	cfg := Config{
-		Addr:            getEnv("ADDR", ":8090"),
-		BaseURL:         strings.TrimRight(getEnv("BASE_URL", "http://localhost:8090"), "/"),
+		Addr:            getEnv("ADDR", ":8080"),
+		BaseURL:         strings.TrimRight(getEnv("BASE_URL", "http://localhost:8080"), "/"),
 		Storage:         getEnv("STORAGE", "sqlite"),
 		DBPath:          getEnv("DB_PATH", "shortener.db"),
 		ShutdownTimeout: 10 * time.Second,

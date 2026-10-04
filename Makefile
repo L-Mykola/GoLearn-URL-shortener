@@ -1,7 +1,7 @@
 APP     := shortener
 BIN     := bin/$(APP)
 IMAGE   := golearn-$(APP)
-PORT    ?= 8090
+PORT    ?= 8080
 
 .PHONY: help run build test cover lint fmt tidy clean docker-build docker-run
 
@@ -39,4 +39,4 @@ docker-build:
 	docker build -t $(IMAGE) .
 
 docker-run:
-	docker run --rm -p $(PORT):8090 -v $(APP)-data:/data $(IMAGE)
+	docker run --rm -p $(PORT):8080 -v $(APP)-data:/data $(IMAGE)

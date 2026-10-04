@@ -13,8 +13,8 @@ func TestLoadDefaults(t *testing.T) {
 	}
 
 	want := Config{
-		Addr:            ":8090",
-		BaseURL:         "http://localhost:8090",
+		Addr:            ":8080",
+		BaseURL:         "http://localhost:8080",
 		LogLevel:        slog.LevelInfo,
 		ShutdownTimeout: 10 * time.Second,
 		Storage:         "sqlite",

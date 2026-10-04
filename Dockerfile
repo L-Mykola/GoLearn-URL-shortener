@@ -14,10 +14,10 @@ FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/shortener /shortener
 COPY --from=build --chown=nonroot:nonroot /out/data /data
 
-ENV ADDR=:8090 \
+ENV ADDR=:8080 \
     DB_PATH=/data/shortener.db
 
-EXPOSE 8090
+EXPOSE 8080
 VOLUME ["/data"]
 USER nonroot:nonroot
 
