@@ -1,0 +1,10 @@
+.git
+.vscode
+.idea
+bin
+*.db
+*.db-wal
+*.db-shm
+*.out
+Dockerfile
+.dockerignore
