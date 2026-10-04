@@ -14,7 +14,7 @@ import (
 const maxBodyBytes = 1 << 20
 
 type LinkService interface {
-	Shorten(ctx context.Context, rawURL string) (link.Link, error)
+	Shorten(ctx context.Context, in link.ShortenInput) (link.Link, error)
 	Resolve(ctx context.Context, code string) (string, error)
 	Stats(ctx context.Context, code string) (link.Link, error)
 }
@@ -40,15 +40,17 @@ func (h *Handler) Routes() http.Handler {
 }
 
 type createLinkRequest struct {
-	URL string `json:"url"`
+	URL        string `json:"url"`
+	TTLSeconds int64  `json:"ttl_seconds"`
 }
 
 type linkResponse struct {
-	Code      string    `json:"code"`
-	ShortURL  string    `json:"short_url"`
-	URL       string    `json:"url"`
-	CreatedAt time.Time `json:"created_at"`
-	Visits    *int64    `json:"visits,omitempty"`
+	Code      string     `json:"code"`
+	ShortURL  string     `json:"short_url"`
+	URL       string     `json:"url"`
+	CreatedAt time.Time  `json:"created_at"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	Visits    *int64     `json:"visits,omitempty"`
 }
 
 type errorResponse struct {
@@ -72,7 +74,15 @@ func (h *Handler) createLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	l, err := h.svc.Shorten(r.Context(), req.URL)
+	if req.TTLSeconds < 0 || req.TTLSeconds > int64(link.MaxTTL/time.Second) {
+		h.writeError(w, http.StatusBadRequest, "invalid ttl: ttl_seconds out of range")
+		return
+	}
+
+	l, err := h.svc.Shorten(r.Context(), link.ShortenInput{
+		URL: req.URL,
+		TTL: time.Duration(req.TTLSeconds) * time.Second,
+	})
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -106,6 +116,9 @@ func (h *Handler) toResponse(l link.Link, withVisits bool) linkResponse {
 		URL:       l.URL,
 		CreatedAt: l.CreatedAt,
 	}
+	if !l.ExpiresAt.IsZero() {
+		resp.ExpiresAt = &l.ExpiresAt
+	}
 	if withVisits {
 		resp.Visits = &l.Visits
 	}
@@ -114,7 +127,7 @@ func (h *Handler) toResponse(l link.Link, withVisits bool) linkResponse {
 
 func (h *Handler) handleError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, link.ErrInvalidURL):
+	case errors.Is(err, link.ErrInvalidURL), errors.Is(err, link.ErrInvalidTTL):
 		h.writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, link.ErrNotFound):
 		h.writeError(w, http.StatusNotFound, "link not found")

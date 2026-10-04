@@ -15,15 +15,17 @@ type Config struct {
 	ShutdownTimeout time.Duration
 	Storage         string
 	DBPath          string
+	CleanupInterval time.Duration
 }
 
 func Load() (Config, error) {
 	cfg := Config{
 		Addr:            getEnv("ADDR", ":8090"),
 		BaseURL:         strings.TrimRight(getEnv("BASE_URL", "http://localhost:8090"), "/"),
-		ShutdownTimeout: 10 * time.Second,
 		Storage:         getEnv("STORAGE", "sqlite"),
 		DBPath:          getEnv("DB_PATH", "shortener.db"),
+		ShutdownTimeout: 10 * time.Second,
+		CleanupInterval: time.Minute,
 	}
 
 	switch cfg.Storage {
@@ -36,12 +38,11 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("LOG_LEVEL: %w", err)
 	}
 
-	if v, ok := os.LookupEnv("SHUTDOWN_TIMEOUT"); ok {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return Config{}, fmt.Errorf("SHUTDOWN_TIMEOUT: %w", err)
-		}
-		cfg.ShutdownTimeout = d
+	if err := durationEnv("SHUTDOWN_TIMEOUT", &cfg.ShutdownTimeout); err != nil {
+		return Config{}, err
+	}
+	if err := durationEnv("CLEANUP_INTERVAL", &cfg.CleanupInterval); err != nil {
+		return Config{}, err
 	}
 
 	return cfg, nil
@@ -52,4 +53,20 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func durationEnv(key string, dst *time.Duration) error {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return fmt.Errorf("%s: %w", key, err)
+	}
+	if d <= 0 {
+		return fmt.Errorf("%s: must be positive, got %s", key, d)
+	}
+	*dst = d
+	return nil
 }

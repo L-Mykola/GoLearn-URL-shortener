@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -43,6 +44,16 @@ func run() error {
 	}
 	defer closeStore()
 	logger.Info("storage ready", "type", cfg.Storage, "path", cfg.DBPath)
+
+	var wg sync.WaitGroup
+	bgCtx, stopBackground := context.WithCancel(ctx)
+	defer func() {
+		stopBackground()
+		wg.Wait()
+	}()
+
+	cleaner := link.NewCleaner(store, cfg.CleanupInterval, logger)
+	wg.Go(func() { cleaner.Run(bgCtx) })
 
 	svc := link.NewService(store)
 	handler := httpapi.New(svc, cfg.BaseURL, logger)

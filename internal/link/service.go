@@ -11,9 +11,18 @@ import (
 const (
 	codeLength  = 7
 	maxAttempts = 5
+	MaxTTL      = 365 * 24 * time.Hour
 )
 
-var ErrInvalidURL = errors.New("invalid url")
+var (
+	ErrInvalidURL = errors.New("invalid url")
+	ErrInvalidTTL = errors.New("invalid ttl")
+)
+
+type ShortenInput struct {
+	URL string
+	TTL time.Duration
+}
 
 type Service struct {
 	store Store
@@ -24,16 +33,26 @@ func NewService(store Store) *Service {
 	return &Service{store: store, now: time.Now}
 }
 
-func (s *Service) Shorten(ctx context.Context, rawURL string) (Link, error) {
-	if err := validateURL(rawURL); err != nil {
+func (s *Service) Shorten(ctx context.Context, in ShortenInput) (Link, error) {
+	if err := validateURL(in.URL); err != nil {
 		return Link{}, err
+	}
+	if in.TTL < 0 || in.TTL > MaxTTL {
+		return Link{}, fmt.Errorf("%w: must be between 0 and %s", ErrInvalidTTL, MaxTTL)
+	}
+
+	now := s.now().UTC()
+	var expiresAt time.Time
+	if in.TTL > 0 {
+		expiresAt = now.Add(in.TTL)
 	}
 
 	for range maxAttempts {
 		l := Link{
 			Code:      generateCode(codeLength),
-			URL:       rawURL,
-			CreatedAt: s.now().UTC(),
+			URL:       in.URL,
+			CreatedAt: now,
+			ExpiresAt: expiresAt,
 		}
 
 		err := s.store.Save(ctx, l)
@@ -48,7 +67,7 @@ func (s *Service) Shorten(ctx context.Context, rawURL string) (Link, error) {
 }
 
 func (s *Service) Resolve(ctx context.Context, code string) (string, error) {
-	l, err := s.store.Get(ctx, code)
+	l, err := s.get(ctx, code)
 	if err != nil {
 		return "", err
 	}
@@ -59,7 +78,18 @@ func (s *Service) Resolve(ctx context.Context, code string) (string, error) {
 }
 
 func (s *Service) Stats(ctx context.Context, code string) (Link, error) {
-	return s.store.Get(ctx, code)
+	return s.get(ctx, code)
+}
+
+func (s *Service) get(ctx context.Context, code string) (Link, error) {
+	l, err := s.store.Get(ctx, code)
+	if err != nil {
+		return Link{}, err
+	}
+	if l.Expired(s.now()) {
+		return Link{}, ErrNotFound
+	}
+	return l, nil
 }
 
 func validateURL(raw string) error {

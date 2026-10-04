@@ -3,6 +3,7 @@ package memstore
 import (
 	"context"
 	"sync"
+	"time"
 
 	"golearn/internal/link"
 )
@@ -51,4 +52,18 @@ func (s *Store) IncrementVisits(_ context.Context, code string) error {
 	l.Visits++
 	s.links[code] = l
 	return nil
+}
+
+func (s *Store) DeleteExpired(_ context.Context, now time.Time) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var n int64
+	for code, l := range s.links {
+		if l.Expired(now) {
+			delete(s.links, code)
+			n++
+		}
+	}
+	return n, nil
 }

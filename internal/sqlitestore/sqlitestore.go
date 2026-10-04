@@ -14,13 +14,7 @@ import (
 
 var _ link.Store = (*Store)(nil)
 
-const schema = `
-CREATE TABLE IF NOT EXISTS links (
-	code       TEXT PRIMARY KEY,
-	url        TEXT    NOT NULL,
-	created_at TEXT    NOT NULL,
-	visits     INTEGER NOT NULL DEFAULT 0
-);`
+const timeLayout = "2006-01-02T15:04:05.000000000Z"
 
 type Store struct {
 	db *sql.DB
@@ -39,7 +33,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
 
-	if _, err := db.ExecContext(ctx, schema); err != nil {
+	if err := migrate(ctx, db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
@@ -53,9 +47,9 @@ func (s *Store) Close() error {
 
 func (s *Store) Save(ctx context.Context, l link.Link) error {
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO links (code, url, created_at, visits) VALUES (?, ?, ?, ?)
+		`INSERT INTO links (code, url, created_at, expires_at, visits) VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT (code) DO NOTHING`,
-		l.Code, l.URL, l.CreatedAt.UTC().Format(time.RFC3339Nano), l.Visits,
+		l.Code, l.URL, formatTime(l.CreatedAt), nullTime(l.ExpiresAt), l.Visits,
 	)
 	if err != nil {
 		return fmt.Errorf("insert link: %w", err)
@@ -75,11 +69,12 @@ func (s *Store) Get(ctx context.Context, code string) (link.Link, error) {
 	var (
 		l         link.Link
 		createdAt string
+		expiresAt sql.NullString
 	)
 
 	err := s.db.QueryRowContext(ctx,
-		`SELECT code, url, created_at, visits FROM links WHERE code = ?`, code,
-	).Scan(&l.Code, &l.URL, &createdAt, &l.Visits)
+		`SELECT code, url, created_at, expires_at, visits FROM links WHERE code = ?`, code,
+	).Scan(&l.Code, &l.URL, &createdAt, &expiresAt, &l.Visits)
 	if errors.Is(err, sql.ErrNoRows) {
 		return link.Link{}, link.ErrNotFound
 	}
@@ -87,9 +82,13 @@ func (s *Store) Get(ctx context.Context, code string) (link.Link, error) {
 		return link.Link{}, fmt.Errorf("select link: %w", err)
 	}
 
-	l.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
-	if err != nil {
-		return link.Link{}, fmt.Errorf("parse created_at %q: %w", createdAt, err)
+	if l.CreatedAt, err = parseTime(createdAt); err != nil {
+		return link.Link{}, fmt.Errorf("parse created_at: %w", err)
+	}
+	if expiresAt.Valid {
+		if l.ExpiresAt, err = parseTime(expiresAt.String); err != nil {
+			return link.Link{}, fmt.Errorf("parse expires_at: %w", err)
+		}
 	}
 	return l, nil
 }
@@ -110,4 +109,29 @@ func (s *Store) IncrementVisits(ctx context.Context, code string) error {
 		return link.ErrNotFound
 	}
 	return nil
+}
+
+func (s *Store) DeleteExpired(ctx context.Context, now time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM links WHERE expires_at IS NOT NULL AND expires_at <= ?`, formatTime(now),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+func formatTime(t time.Time) string {
+	return t.UTC().Format(timeLayout)
+}
+
+func nullTime(t time.Time) sql.NullString {
+	if t.IsZero() {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: formatTime(t), Valid: true}
+}
+
+func parseTime(s string) (time.Time, error) {
+	return time.Parse(time.RFC3339Nano, s)
 }

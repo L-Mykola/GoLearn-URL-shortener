@@ -19,6 +19,7 @@ func TestLoadDefaults(t *testing.T) {
 		ShutdownTimeout: 10 * time.Second,
 		Storage:         "sqlite",
 		DBPath:          "shortener.db",
+		CleanupInterval: time.Minute,
 	}
 	if cfg != want {
 		t.Errorf("got %+v, want %+v", cfg, want)
@@ -32,6 +33,7 @@ func TestLoadFromEnv(t *testing.T) {
 	t.Setenv("SHUTDOWN_TIMEOUT", "3s")
 	t.Setenv("STORAGE", "memory")
 	t.Setenv("DB_PATH", "/tmp/x.db")
+	t.Setenv("CLEANUP_INTERVAL", "30s")
 
 	cfg, err := Load()
 	if err != nil {
@@ -45,6 +47,7 @@ func TestLoadFromEnv(t *testing.T) {
 		ShutdownTimeout: 3 * time.Second,
 		Storage:         "memory",
 		DBPath:          "/tmp/x.db",
+		CleanupInterval: 30 * time.Second,
 	}
 	if cfg != want {
 		t.Errorf("got %+v, want %+v", cfg, want)
@@ -58,6 +61,8 @@ func TestLoadInvalid(t *testing.T) {
 		{"LOG_LEVEL", "loud"},
 		{"SHUTDOWN_TIMEOUT", "ten"},
 		{"STORAGE", "redis"},
+		{"CLEANUP_INTERVAL", "0s"},
+		{"CLEANUP_INTERVAL", "-1m"},
 	}
 
 	for _, tt := range tests {

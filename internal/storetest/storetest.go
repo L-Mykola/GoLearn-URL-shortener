@@ -18,6 +18,7 @@ func Run(t *testing.T, newStore func(t *testing.T) link.Store) {
 			Code:      "abc",
 			URL:       "https://go.dev",
 			CreatedAt: time.Date(2026, 1, 2, 3, 4, 5, 6, time.UTC),
+			ExpiresAt: time.Date(2026, 2, 2, 3, 4, 5, 6, time.UTC),
 		}
 
 		if err := s.Save(ctx, want); err != nil {
@@ -27,7 +28,8 @@ func Run(t *testing.T, newStore func(t *testing.T) link.Store) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got.Code != want.Code || got.URL != want.URL || got.Visits != 0 || !got.CreatedAt.Equal(want.CreatedAt) {
+		if got.Code != want.Code || got.URL != want.URL || got.Visits != 0 ||
+			!got.CreatedAt.Equal(want.CreatedAt) || !got.ExpiresAt.Equal(want.ExpiresAt) {
 			t.Errorf("got %+v, want %+v", got, want)
 		}
 	})
@@ -86,6 +88,39 @@ func Run(t *testing.T, newStore func(t *testing.T) link.Store) {
 		got, _ := s.Get(ctx, "abc")
 		if got.Visits != n {
 			t.Errorf("visits = %d, want %d", got.Visits, n)
+		}
+	})
+
+	t.Run("DeleteExpired", func(t *testing.T) {
+		ctx := context.Background()
+		s := newStore(t)
+		now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+
+		links := []link.Link{
+			{Code: "forever", URL: "https://a.com"},
+			{Code: "past", URL: "https://b.com", ExpiresAt: now.Add(-time.Hour)},
+			{Code: "exact", URL: "https://c.com", ExpiresAt: now},
+			{Code: "future", URL: "https://d.com", ExpiresAt: now.Add(time.Nanosecond)},
+		}
+		for _, l := range links {
+			if err := s.Save(ctx, l); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		n, err := s.DeleteExpired(ctx, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n != 2 {
+			t.Errorf("deleted = %d, want 2", n)
+		}
+
+		for code, wantExists := range map[string]bool{"forever": true, "past": false, "exact": false, "future": true} {
+			_, err := s.Get(ctx, code)
+			if exists := err == nil; exists != wantExists {
+				t.Errorf("%s: exists = %v, want %v (err %v)", code, exists, wantExists, err)
+			}
 		}
 	})
 }

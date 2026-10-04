@@ -15,13 +15,13 @@ import (
 )
 
 type fakeService struct {
-	shortenFn func(ctx context.Context, rawURL string) (link.Link, error)
+	shortenFn func(ctx context.Context, in link.ShortenInput) (link.Link, error)
 	resolveFn func(ctx context.Context, code string) (string, error)
 	statsFn   func(ctx context.Context, code string) (link.Link, error)
 }
 
-func (f *fakeService) Shorten(ctx context.Context, rawURL string) (link.Link, error) {
-	return f.shortenFn(ctx, rawURL)
+func (f *fakeService) Shorten(ctx context.Context, in link.ShortenInput) (link.Link, error) {
+	return f.shortenFn(ctx, in)
 }
 
 func (f *fakeService) Resolve(ctx context.Context, code string) (string, error) {
@@ -53,17 +53,20 @@ func TestCreateLink(t *testing.T) {
 		{"invalid url", `{"url":"ftp://x"}`, link.ErrInvalidURL, http.StatusBadRequest},
 		{"broken json", `{"url":`, nil, http.StatusBadRequest},
 		{"unknown field", `{"link":"https://go.dev"}`, nil, http.StatusBadRequest},
+		{"invalid ttl from service", `{"url":"https://go.dev","ttl_seconds":5}`, link.ErrInvalidTTL, http.StatusBadRequest},
+		{"negative ttl", `{"url":"https://go.dev","ttl_seconds":-1}`, nil, http.StatusBadRequest},
+		{"overflowing ttl", `{"url":"https://go.dev","ttl_seconds":9223372036854775807}`, nil, http.StatusBadRequest},
 		{"internal error", `{"url":"https://go.dev"}`, errors.New("boom"), http.StatusInternalServerError},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := &fakeService{
-				shortenFn: func(_ context.Context, rawURL string) (link.Link, error) {
+				shortenFn: func(_ context.Context, in link.ShortenInput) (link.Link, error) {
 					if tt.shortenErr != nil {
 						return link.Link{}, tt.shortenErr
 					}
-					return link.Link{Code: "abc", URL: rawURL, CreatedAt: created}, nil
+					return link.Link{Code: "abc", URL: in.URL, CreatedAt: created}, nil
 				},
 			}
 
@@ -82,8 +85,8 @@ func TestCreateLink(t *testing.T) {
 
 func TestCreateLinkResponseBody(t *testing.T) {
 	svc := &fakeService{
-		shortenFn: func(_ context.Context, rawURL string) (link.Link, error) {
-			return link.Link{Code: "abc", URL: rawURL}, nil
+		shortenFn: func(_ context.Context, in link.ShortenInput) (link.Link, error) {
+			return link.Link{Code: "abc", URL: in.URL}, nil
 		},
 	}
 
@@ -151,5 +154,31 @@ func TestMethodNotAllowed(t *testing.T) {
 	rec := serve(&fakeService{}, httptest.NewRequest(http.MethodDelete, "/api/links", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestCreateLinkWithTTL(t *testing.T) {
+	created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	var gotTTL time.Duration
+	svc := &fakeService{
+		shortenFn: func(_ context.Context, in link.ShortenInput) (link.Link, error) {
+			gotTTL = in.TTL
+			return link.Link{Code: "abc", URL: in.URL, CreatedAt: created, ExpiresAt: created.Add(in.TTL)}, nil
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/links", strings.NewReader(`{"url":"https://go.dev","ttl_seconds":3600}`))
+	rec := serve(svc, req)
+
+	if gotTTL != time.Hour {
+		t.Errorf("ttl passed to service = %v, want 1h", gotTTL)
+	}
+
+	var got linkResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ExpiresAt == nil || !got.ExpiresAt.Equal(created.Add(time.Hour)) {
+		t.Errorf("expires_at = %v", got.ExpiresAt)
 	}
 }
