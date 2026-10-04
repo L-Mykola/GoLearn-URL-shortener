@@ -41,6 +41,7 @@ func (h *Handler) Routes() http.Handler {
 
 type createLinkRequest struct {
 	URL        string `json:"url"`
+	Code       string `json:"code"`
 	TTLSeconds int64  `json:"ttl_seconds"`
 }
 
@@ -80,8 +81,9 @@ func (h *Handler) createLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	l, err := h.svc.Shorten(r.Context(), link.ShortenInput{
-		URL: req.URL,
-		TTL: time.Duration(req.TTLSeconds) * time.Second,
+		URL:  req.URL,
+		Code: req.Code,
+		TTL:  time.Duration(req.TTLSeconds) * time.Second,
 	})
 	if err != nil {
 		h.handleError(w, err)
@@ -127,8 +129,12 @@ func (h *Handler) toResponse(l link.Link, withVisits bool) linkResponse {
 
 func (h *Handler) handleError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, link.ErrInvalidURL), errors.Is(err, link.ErrInvalidTTL):
+	case errors.Is(err, link.ErrInvalidURL),
+		errors.Is(err, link.ErrInvalidTTL),
+		errors.Is(err, link.ErrInvalidCode):
 		h.writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, link.ErrExists):
+		h.writeError(w, http.StatusConflict, "code is already taken")
 	case errors.Is(err, link.ErrNotFound):
 		h.writeError(w, http.StatusNotFound, "link not found")
 	default:

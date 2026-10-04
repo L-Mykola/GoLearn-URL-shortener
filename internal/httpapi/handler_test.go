@@ -54,6 +54,8 @@ func TestCreateLink(t *testing.T) {
 		{"broken json", `{"url":`, nil, http.StatusBadRequest},
 		{"unknown field", `{"link":"https://go.dev"}`, nil, http.StatusBadRequest},
 		{"invalid ttl from service", `{"url":"https://go.dev","ttl_seconds":5}`, link.ErrInvalidTTL, http.StatusBadRequest},
+		{"invalid code", `{"url":"https://go.dev","code":"a"}`, link.ErrInvalidCode, http.StatusBadRequest},
+		{"code taken", `{"url":"https://go.dev","code":"taken"}`, link.ErrExists, http.StatusConflict},
 		{"negative ttl", `{"url":"https://go.dev","ttl_seconds":-1}`, nil, http.StatusBadRequest},
 		{"overflowing ttl", `{"url":"https://go.dev","ttl_seconds":9223372036854775807}`, nil, http.StatusBadRequest},
 		{"internal error", `{"url":"https://go.dev"}`, errors.New("boom"), http.StatusInternalServerError},
@@ -180,5 +182,25 @@ func TestCreateLinkWithTTL(t *testing.T) {
 	}
 	if got.ExpiresAt == nil || !got.ExpiresAt.Equal(created.Add(time.Hour)) {
 		t.Errorf("expires_at = %v", got.ExpiresAt)
+	}
+}
+
+func TestCreateLinkPassesCustomCode(t *testing.T) {
+	var got link.ShortenInput
+	svc := &fakeService{
+		shortenFn: func(_ context.Context, in link.ShortenInput) (link.Link, error) {
+			got = in
+			return link.Link{Code: in.Code, URL: in.URL}, nil
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/links", strings.NewReader(`{"url":"https://go.dev","code":"my-link"}`))
+	rec := serve(svc, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if got.Code != "my-link" {
+		t.Errorf("code passed to service = %q", got.Code)
 	}
 }

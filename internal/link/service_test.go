@@ -3,6 +3,7 @@ package link
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -258,5 +259,63 @@ func TestLinkExpired(t *testing.T) {
 				t.Errorf("Expired = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestShortenCustomCode(t *testing.T) {
+	tests := []struct {
+		name    string
+		code    string
+		wantErr error
+	}{
+		{"simple", "my-link", nil},
+		{"underscore and digits", "promo_2026", nil},
+		{"min length", "abc", nil},
+		{"max length", strings.Repeat("a", 32), nil},
+		{"too short", "ab", ErrInvalidCode},
+		{"too long", strings.Repeat("a", 33), ErrInvalidCode},
+		{"space", "my link", ErrInvalidCode},
+		{"slash", "a/b", ErrInvalidCode},
+		{"cyrillic", "привіт", ErrInvalidCode},
+		{"reserved", "healthz", ErrInvalidCode},
+		{"reserved any case", "API", ErrInvalidCode},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newFakeStore()
+			svc := NewService(store)
+
+			l, err := svc.Shorten(context.Background(), ShortenInput{URL: "https://go.dev", Code: tt.code})
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("want %v, got %v", tt.wantErr, err)
+				}
+				if store.saveCalls != 0 {
+					t.Errorf("store must not be called for invalid code")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if l.Code != tt.code {
+				t.Errorf("code = %q, want %q", l.Code, tt.code)
+			}
+		})
+	}
+}
+
+func TestShortenCustomCodeTaken(t *testing.T) {
+	store := newFakeStore()
+	store.saveErrs = []error{ErrExists}
+	svc := NewService(store)
+
+	_, err := svc.Shorten(context.Background(), ShortenInput{URL: "https://go.dev", Code: "taken"})
+	if !errors.Is(err, ErrExists) {
+		t.Fatalf("want ErrExists, got %v", err)
+	}
+	if store.saveCalls != 1 {
+		t.Errorf("save calls = %d, custom code must not be retried", store.saveCalls)
 	}
 }
