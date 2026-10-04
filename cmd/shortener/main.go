@@ -4,15 +4,20 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"golearn/internal/httpapi"
+	"golearn/internal/link"
+	"golearn/internal/memstore"
 )
 
 func main() {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", handleHealth)
+	store := memstore.New()
+	svc := link.NewService(store)
+	handler := httpapi.New(svc, "http://localhost:8090")
 
 	srv := &http.Server{
 		Addr:              ":8090",
-		Handler:           mux,
+		Handler:           handler.Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -23,10 +28,4 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func handleHealth(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("ok"))
 }
